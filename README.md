@@ -14,13 +14,30 @@ Swap faces in movie/TV posters. Three stages, run in order:
 > don't redistribute posters with a swapped face, and don't run this on anyone's likeness
 > without their consent.
 
+## Requirements
+
+**Python 3.11** specifically. `insightface`'s dependencies (`onnx`, `onnxruntime`) only
+ship prebuilt wheels for a handful of Python versions — on anything newer (3.13, 3.14...)
+`pip install` will try to compile `onnx` from source and fail with a `Failed to build
+wheel for onnx` error unless you have a full C++ build toolchain installed. Using 3.11
+avoids that entirely.
+
 ## Quick start
 
 **Windows:** double-click `setup.bat`, then `run.bat`.
 
-**Any OS:**
+`setup.bat` creates a `.venv` folder using **Python 3.11** specifically (via the `py`
+launcher), so it works correctly even if your system's default `python` is a different,
+incompatible version. If Python 3.11 isn't installed, it'll tell you to grab it from
+[python.org](https://www.python.org/downloads/release/python-3119/) or run
+`winget install --id Python.Python.3.11`, then re-run `setup.bat`.
+
+**Any OS (terminal):**
 
 ```bash
+py -3.11 -m venv .venv          # Windows; use `python3.11 -m venv .venv` on macOS/Linux
+.venv\Scripts\activate          # macOS/Linux: source .venv/bin/activate
+
 pip install -r requirements.txt
 python setup.py
 python run.py

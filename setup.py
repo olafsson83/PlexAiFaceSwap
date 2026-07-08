@@ -166,7 +166,13 @@ def main():
     print(f"Wrote {ENV_PATH}")
 
     step(6, "Installing the right packages for your hardware")
-    pip_install("onnxruntime-gpu" if has_gpu else "onnxruntime")
+    if has_gpu:
+        # insightface pulls in plain (CPU) onnxruntime as a dependency; it conflicts
+        # with onnxruntime-gpu if both are installed, so swap it out.
+        subprocess.run([sys.executable, "-m", "pip", "uninstall", "-y", "onnxruntime"], check=False)
+        pip_install("onnxruntime-gpu")
+    else:
+        print("  CPU-only onnxruntime already installed alongside insightface, nothing more to do.")
 
     step(7, "Downloading the face-swap model (about 250MB, one-time)")
     download_model()
