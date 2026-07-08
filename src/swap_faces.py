@@ -22,7 +22,12 @@ def build_models():
     print("Loading face detection + swap models (first run also fetches the ~350MB detector pack)...")
     face_app = FaceAnalysis(name="buffalo_l")
     face_app.prepare(ctx_id=CTX_ID, det_size=(640, 640))
-    swapper = insightface.model_zoo.get_model("inswapper_128.onnx", download=False, download_zip=False)
+    # get_model() only joins a name with the model root if it does NOT end in
+    # ".onnx" -- pass a name ending in .onnx and it's used as a literal path
+    # instead (relative to the current working directory), which silently
+    # fails unless you happen to run from inside ~/.insightface/models/.
+    # Passing the fully resolved path sidesteps that entirely.
+    swapper = insightface.model_zoo.get_model(str(preflight.MODEL_PATH), download=False, download_zip=False)
     return face_app, swapper
 
 
