@@ -161,18 +161,26 @@ def download_model():
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     tmp_path = MODEL_PATH.with_suffix(".onnx.part")
 
-    with requests.get(MODEL_URL, stream=True, timeout=60) as r:
-        r.raise_for_status()
-        total = int(r.headers.get("content-length", 0))
-        done = 0
-        with open(tmp_path, "wb") as f:
-            for chunk in r.iter_content(chunk_size=1024 * 1024):
-                f.write(chunk)
-                done += len(chunk)
-                if total:
-                    pct = done * 100 // total
-                    print(f"\r  {pct}% ({done // (1024 * 1024)}MB / {total // (1024 * 1024)}MB)", end="", flush=True)
-        print()
+    try:
+        with requests.get(MODEL_URL, stream=True, timeout=60) as r:
+            r.raise_for_status()
+            total = int(r.headers.get("content-length", 0))
+            done = 0
+            with open(tmp_path, "wb") as f:
+                for chunk in r.iter_content(chunk_size=1024 * 1024):
+                    f.write(chunk)
+                    done += len(chunk)
+                    if total:
+                        pct = done * 100 // total
+                        print(f"\r  {pct}% ({done // (1024 * 1024)}MB / {total // (1024 * 1024)}MB)", end="", flush=True)
+            print()
+    except requests.RequestException as e:
+        tmp_path.unlink(missing_ok=True)
+        sys.exit(
+            f"\nDownload failed ({e}). Your connection likely dropped partway through "
+            "this ~530MB file. Re-run `python setup.py` to try again -- re-answering the "
+            "earlier questions is quick, the download is the slow part."
+        )
 
     tmp_path.rename(MODEL_PATH)
 
@@ -201,7 +209,7 @@ def main():
     step(6, "Installing the right packages for your hardware")
     ensure_onnxruntime(has_gpu)
 
-    step(7, "Downloading the face-swap model (about 250MB, one-time)")
+    step(7, "Downloading the face-swap model (about 530MB, one-time)")
     download_model()
 
     step(8, "Checking everything is ready")
