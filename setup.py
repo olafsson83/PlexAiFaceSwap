@@ -134,20 +134,30 @@ def ensure_onnxruntime(has_gpu):
     it, even if a step in between deleted files it needs. Uninstalling both
     variants and doing a --force-reinstall of the one we want avoids that
     regardless of what state a previous run left behind.
+
+    The GPU variant additionally needs its own CUDA/cuDNN runtime DLLs --
+    `pip install onnxruntime-gpu` alone does NOT include them, and without
+    them onnxruntime silently falls back to CPU. The `[cuda,cudnn]` extra
+    pulls in NVIDIA's pip-packaged runtime libraries (no separate CUDA
+    Toolkit install or NVIDIA developer account needed); swap_faces.py then
+    calls onnxruntime.preload_dlls() at runtime so those libraries -- which
+    live in their own separate pip packages, not on the normal DLL search
+    path -- actually get found.
     """
     subprocess.run(
         [sys.executable, "-m", "pip", "uninstall", "-y", "onnxruntime", "onnxruntime-gpu"],
         check=False,
     )
-    package = "onnxruntime-gpu" if has_gpu else "onnxruntime"
-    # --no-deps: onnxruntime(-gpu)'s own dependency resolution can pull numpy
-    # past the <2 pin insightface/scikit-image need here. Re-pin numpy
-    # explicitly afterward -- NOT by re-running the full requirements.txt,
-    # which would reinstall plain onnxruntime on top (it doesn't recognize
-    # onnxruntime-gpu as satisfying insightface's "onnxruntime" dependency)
-    # and undo the swap we just made.
+    package = "onnxruntime-gpu[cuda,cudnn]" if has_gpu else "onnxruntime"
+    # onnxruntime-gpu's own dependency resolution can pull numpy past the <2
+    # pin insightface/scikit-image need here (and the [cuda,cudnn] extras
+    # need full dependency resolution to install at all, so --no-deps isn't
+    # an option) -- re-pin numpy explicitly afterward instead. Don't do this
+    # by re-running the full requirements.txt: that would reinstall plain
+    # onnxruntime on top (it doesn't recognize onnxruntime-gpu as satisfying
+    # insightface's "onnxruntime" dependency) and undo the swap we just made.
     subprocess.run(
-        [sys.executable, "-m", "pip", "install", "--force-reinstall", "--no-cache-dir", "--no-deps", package],
+        [sys.executable, "-m", "pip", "install", "--force-reinstall", "--no-cache-dir", package],
         check=True,
     )
     subprocess.run([sys.executable, "-m", "pip", "install", "numpy<2"], check=True)
