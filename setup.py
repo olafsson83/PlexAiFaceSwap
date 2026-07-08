@@ -120,6 +120,39 @@ def pip_install(*args):
     subprocess.run([sys.executable, "-m", "pip", "install", *args], check=True)
 
 
+def ensure_onnxruntime(has_gpu):
+    """Installs exactly one onnxruntime variant, idempotently.
+
+    insightface declares plain (CPU) onnxruntime as a dependency, so a base
+    `pip install -r requirements.txt` always pulls it in. onnxruntime and
+    onnxruntime-gpu ship overlapping files under the same "onnxruntime"
+    package directory, so having both installed (even briefly, across
+    separate uninstall/install calls) can leave the package broken -- e.g.
+    "module 'onnxruntime' has no attribute 'InferenceSession'". That's
+    especially likely on a second run of setup.py, since pip considers an
+    already-installed package "satisfied" and silently skips reinstalling
+    it, even if a step in between deleted files it needs. Uninstalling both
+    variants and doing a --force-reinstall of the one we want avoids that
+    regardless of what state a previous run left behind.
+    """
+    subprocess.run(
+        [sys.executable, "-m", "pip", "uninstall", "-y", "onnxruntime", "onnxruntime-gpu"],
+        check=False,
+    )
+    package = "onnxruntime-gpu" if has_gpu else "onnxruntime"
+    # --no-deps: onnxruntime(-gpu)'s own dependency resolution can pull numpy
+    # past the <2 pin insightface/scikit-image need here. Re-pin numpy
+    # explicitly afterward -- NOT by re-running the full requirements.txt,
+    # which would reinstall plain onnxruntime on top (it doesn't recognize
+    # onnxruntime-gpu as satisfying insightface's "onnxruntime" dependency)
+    # and undo the swap we just made.
+    subprocess.run(
+        [sys.executable, "-m", "pip", "install", "--force-reinstall", "--no-cache-dir", "--no-deps", package],
+        check=True,
+    )
+    subprocess.run([sys.executable, "-m", "pip", "install", "numpy<2"], check=True)
+
+
 def download_model():
     if MODEL_PATH.exists():
         print(f"  Already downloaded: {MODEL_PATH}")
@@ -128,18 +161,26 @@ def download_model():
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     tmp_path = MODEL_PATH.with_suffix(".onnx.part")
 
-    with requests.get(MODEL_URL, stream=True, timeout=60) as r:
-        r.raise_for_status()
-        total = int(r.headers.get("content-length", 0))
-        done = 0
-        with open(tmp_path, "wb") as f:
-            for chunk in r.iter_content(chunk_size=1024 * 1024):
-                f.write(chunk)
-                done += len(chunk)
-                if total:
-                    pct = done * 100 // total
-                    print(f"\r  {pct}% ({done // (1024 * 1024)}MB / {total // (1024 * 1024)}MB)", end="", flush=True)
-        print()
+    try:
+        with requests.get(MODEL_URL, stream=True, timeout=60) as r:
+            r.raise_for_status()
+            total = int(r.headers.get("content-length", 0))
+            done = 0
+            with open(tmp_path, "wb") as f:
+                for chunk in r.iter_content(chunk_size=1024 * 1024):
+                    f.write(chunk)
+                    done += len(chunk)
+                    if total:
+                        pct = done * 100 // total
+                        print(f"\r  {pct}% ({done // (1024 * 1024)}MB / {total // (1024 * 1024)}MB)", end="", flush=True)
+            print()
+    except requests.RequestException as e:
+        tmp_path.unlink(missing_ok=True)
+        sys.exit(
+            f"\nDownload failed ({e}). Your connection likely dropped partway through "
+            "this ~530MB file. Re-run `python setup.py` to try again -- re-answering the "
+            "earlier questions is quick, the download is the slow part."
+        )
 
     tmp_path.rename(MODEL_PATH)
 
@@ -166,15 +207,9 @@ def main():
     print(f"Wrote {ENV_PATH}")
 
     step(6, "Installing the right packages for your hardware")
-    if has_gpu:
-        # insightface pulls in plain (CPU) onnxruntime as a dependency; it conflicts
-        # with onnxruntime-gpu if both are installed, so swap it out.
-        subprocess.run([sys.executable, "-m", "pip", "uninstall", "-y", "onnxruntime"], check=False)
-        pip_install("onnxruntime-gpu")
-    else:
-        print("  CPU-only onnxruntime already installed alongside insightface, nothing more to do.")
+    ensure_onnxruntime(has_gpu)
 
-    step(7, "Downloading the face-swap model (about 250MB, one-time)")
+    step(7, "Downloading the face-swap model (about 530MB, one-time)")
     download_model()
 
     step(8, "Checking everything is ready")
