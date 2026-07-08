@@ -1,10 +1,21 @@
+import sys
 import os
 from pathlib import Path
 
 from dotenv import load_dotenv
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-load_dotenv(REPO_ROOT / ".env")
+ENV_PATH = REPO_ROOT / ".env"
+
+try:
+    load_dotenv(ENV_PATH)
+except UnicodeDecodeError:
+    sys.exit(
+        f"{ENV_PATH} isn't valid UTF-8 text (often caused by hand-editing it in a "
+        "text editor that saves as ANSI/Windows-1252 instead of UTF-8 - e.g. Notepad's "
+        "default 'Save As' encoding). Re-run `python setup.py` to regenerate it cleanly, "
+        "or re-save the file with UTF-8 encoding."
+    )
 
 PLEX_URL = os.environ.get("PLEX_URL", "http://127.0.0.1:32400").rstrip("/")
 PLEX_TOKEN = os.environ.get("PLEX_TOKEN", "")
