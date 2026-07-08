@@ -1,0 +1,9 @@
+requests
+python-dotenv
+opencv-python
+insightface
+numpy<2
+tqdm
+
+# setup.py installs onnxruntime (CPU) or onnxruntime-gpu automatically
+# based on whether you say you have an NVIDIA GPU.

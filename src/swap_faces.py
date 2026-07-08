@@ -1,0 +1,92 @@
+"""Stage 2: batch face-swap every downloaded poster onto SOURCE_FACE.
+
+Uses insightface directly (the same buffalo_l detector + inswapper_128.onnx
+model that both Roop and ReActor wrap) so the whole step is one headless
+script with no GUI or node graph involved.
+"""
+import sys
+
+import cv2
+import insightface
+from insightface.app import FaceAnalysis
+from tqdm import tqdm
+
+from config import POSTERS_DIR, SWAPPED_DIR, SOURCE_FACE, CTX_ID
+import preflight
+
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
+MANIFEST_NAME = "manifest.json"  # written by download_posters.py; not an image, skip it
+
+
+def build_models():
+    print("Loading face detection + swap models (first run also fetches the ~350MB detector pack)...")
+    face_app = FaceAnalysis(name="buffalo_l")
+    face_app.prepare(ctx_id=CTX_ID, det_size=(640, 640))
+    swapper = insightface.model_zoo.get_model("inswapper_128.onnx", download=False, download_zip=False)
+    return face_app, swapper
+
+
+def get_source_face(face_app):
+    img = cv2.imread(str(SOURCE_FACE))
+    if img is None:
+        sys.exit(f"Could not read source face image: {SOURCE_FACE}")
+    faces = face_app.get(img)
+    if not faces:
+        sys.exit(f"No face detected in source image: {SOURCE_FACE}")
+    return faces[0]
+
+
+def swap_one(face_app, swapper, source_face, src, dest):
+    img = cv2.imread(str(src))
+    if img is None:
+        return "unreadable"
+
+    faces = face_app.get(img)
+    if not faces:
+        return "no_face"
+
+    result = img.copy()
+    for face in faces:
+        result = swapper.get(result, face, source_face, paste_back=True)
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(dest), result)
+    return "swapped"
+
+
+def main():
+    preflight.require_ready(need_face=True, need_model=True)
+
+    if not POSTERS_DIR.exists():
+        sys.exit(f"Posters folder not found: {POSTERS_DIR}. Run the download stage first.")
+
+    face_app, swapper = build_models()
+    source_face = get_source_face(face_app)
+
+    poster_files = [
+        p for p in POSTERS_DIR.rglob("*")
+        if p.suffix.lower() in IMAGE_EXTS and p.name != MANIFEST_NAME
+    ]
+
+    counts = {"swapped": 0, "skipped": 0, "no_face": 0, "unreadable": 0}
+    for src in tqdm(poster_files, desc="Swapping", unit="poster"):
+        rel = src.relative_to(POSTERS_DIR)
+        dest = SWAPPED_DIR / rel
+
+        if dest.exists():
+            counts["skipped"] += 1
+            continue
+
+        result = swap_one(face_app, swapper, source_face, src, dest)
+        counts[result] = counts.get(result, 0) + 1
+        if result != "swapped":
+            tqdm.write(f"  {result}: {rel}")
+
+    print(
+        f"Done. Swapped {counts['swapped']}, skipped {counts['skipped']} (already done), "
+        f"{counts['no_face']} had no detectable face, {counts['unreadable']} unreadable."
+    )
+
+
+if __name__ == "__main__":
+    main()
