@@ -113,7 +113,7 @@ def write_env(plex_url, plex_token, libraries, face_path, ctx_id):
         f"CTX_ID={ctx_id}",
         "",
     ]
-    ENV_PATH.write_text("\n".join(lines))
+    ENV_PATH.write_text("\n".join(lines), encoding="utf-8")
 
 
 def pip_install(*args):
@@ -185,7 +185,7 @@ def main():
     if ok:
         print("\nAll set! Run `python run.py` to start (or double-click run.bat on Windows).")
     else:
-        print("\nSome checks above are still failing — fix those and re-run `python setup.py`.")
+        print("\nSome checks above are still failing - fix those and re-run `python setup.py`.")
 
 
 if __name__ == "__main__":

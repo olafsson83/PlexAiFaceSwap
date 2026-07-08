@@ -47,7 +47,7 @@ def require_ready(need_plex=False, need_face=False, need_model=False):
     elif need_plex and not PLEX_TOKEN:
         problems.append("PLEX_TOKEN is not set in .env.")
     elif need_plex and not _plex_reachable():
-        problems.append(f"Could not reach Plex at {PLEX_URL} — is the server running and the token correct?")
+        problems.append(f"Could not reach Plex at {PLEX_URL} - is the server running and the token correct?")
 
     if need_face and not SOURCE_FACE.exists():
         problems.append(f"Source face image not found: {SOURCE_FACE}")
