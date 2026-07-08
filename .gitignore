@@ -1,0 +1,17 @@
+# secrets
+.env
+
+# downloaded/generated media (large, regenerable, don't belong in git)
+posters_original/
+posters_swapped/
+
+# face-swap models (large binaries, licensing restricts redistribution)
+*.onnx
+.insightface/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
