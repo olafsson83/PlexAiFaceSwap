@@ -51,7 +51,9 @@ python run.py
 - fetches your actual library list from Plex and lets you pick from a numbered menu
   instead of typing exact names,
 - checks your source face photo exists,
-- asks if you have an NVIDIA GPU and installs the matching `onnxruntime` package,
+- asks if you have an NVIDIA GPU and installs `onnxruntime-gpu` with its CUDA/cuDNN
+  runtime libraries (as pip packages -- no separate CUDA Toolkit install or NVIDIA
+  developer account needed), otherwise the plain CPU `onnxruntime`,
 - **downloads the face-swap model automatically** (previously a manual step — finding
   and placing `inswapper_128.onnx` by hand is the single most confusing part of setting
   this kind of tool up),
@@ -118,6 +120,11 @@ files between stages.
   for that reason so you know how many to expect.
 - **Re-running `setup.py`** is always safe — it overwrites `.env` with whatever you enter
   and skips re-downloading the model if it's already there.
+- **Said yes to GPU but the swap stage logs `Applied providers: ['CPUExecutionProvider']`
+  instead of `CUDAExecutionProvider`?** Re-run `setup.py` — an earlier version of this
+  wizard installed `onnxruntime-gpu` without its actual CUDA/cuDNN runtime libraries,
+  which made it silently fall back to CPU (still worked, just much slower). The current
+  version installs those libraries and loads them correctly; re-running picks up the fix.
 - **Want the original poster back for something?** The upload stage locks each poster it
   sets (`thumb.locked=1`) so Plex won't silently revert it. To undo that for an item: in
   Plex, open its poster picker and choose a different poster (including one of the

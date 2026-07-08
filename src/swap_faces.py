@@ -8,6 +8,7 @@ import sys
 
 import cv2
 import insightface
+import onnxruntime
 from insightface.app import FaceAnalysis
 from tqdm import tqdm
 
@@ -20,6 +21,12 @@ MANIFEST_NAME = "manifest.json"  # written by download_posters.py; not an image,
 
 def build_models():
     print("Loading face detection + swap models (first run also fetches the ~350MB detector pack)...")
+    # The GPU build's CUDA/cuDNN runtime DLLs live inside their own pip
+    # packages (nvidia-cublas-cu12 etc.), not on the normal Windows DLL
+    # search path -- without this, onnxruntime silently falls back to CPU
+    # even though CUDAExecutionProvider is "available". Safe to call
+    # unconditionally: it's a no-op on the CPU-only onnxruntime package.
+    onnxruntime.preload_dlls()
     face_app = FaceAnalysis(name="buffalo_l")
     face_app.prepare(ctx_id=CTX_ID, det_size=(640, 640))
     # get_model() only joins a name with the model root if it does NOT end in
