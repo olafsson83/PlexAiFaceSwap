@@ -8,7 +8,8 @@ Swap faces in movie/TV posters. Three stages, run in order:
    [insightface](https://github.com/deepinsight/insightface) directly (the same
    detector + model that both Roop and ReActor wrap). No GUI, no ComfyUI node graph.
 3. **Upload** *(optional)* — pushes the swapped images back into Plex as the selected
-   poster for each item.
+   poster for each item, then locks the poster field so a later "Refresh Metadata" can't
+   silently revert it back to the original artwork.
 
 > Personal, non-commercial use only. Keep this on your own server for your own laughs —
 > don't redistribute posters with a swapped face, and don't run this on anyone's likeness
@@ -117,6 +118,11 @@ files between stages.
   for that reason so you know how many to expect.
 - **Re-running `setup.py`** is always safe — it overwrites `.env` with whatever you enter
   and skips re-downloading the model if it's already there.
+- **Want the original poster back for something?** The upload stage locks each poster it
+  sets (`thumb.locked=1`) so Plex won't silently revert it. To undo that for an item: in
+  Plex, open its poster picker and choose a different poster (including one of the
+  original agent-sourced ones still listed there) — selecting any poster through the UI
+  re-locks it to your new choice, which is exactly what you want.
 
 ## Manual setup (skipping the wizard)
 

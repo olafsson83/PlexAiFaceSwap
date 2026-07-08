@@ -37,6 +37,19 @@ def upload_poster(rating_key: str, image_path: Path):
     r.raise_for_status()
 
 
+def lock_poster(rating_key: str, section_key: str, item_type: int):
+    """Locks an item's poster field so scheduled metadata refreshes won't replace it.
+
+    Uploading a poster alone does NOT protect it -- Plex can silently revert to
+    agent-sourced artwork on the next refresh unless the field is explicitly
+    locked. This is the same call python-plexapi's lockPoster() makes.
+    """
+    url = f"{PLEX_URL}/library/sections/{section_key}/all"
+    params = {"type": item_type, "id": rating_key, "thumb.locked": 1}
+    r = requests.put(url, headers={"X-Plex-Token": PLEX_TOKEN}, params=params, timeout=30)
+    r.raise_for_status()
+
+
 def safe_filename(title: str, rating_key: str) -> str:
     """Builds a filesystem-safe filename that embeds the ratingKey for later lookup."""
     cleaned = "".join(c for c in title if c not in '<>:"/\\|?*').strip()
