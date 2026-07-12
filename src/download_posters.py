@@ -1,14 +1,14 @@
-"""Stage 1: download current posters for every configured library from Plex.
+"""Stage 1: download current posters and background artwork from Plex.
 
-Incremental: a manifest.json per library records each item's thumb path, so
-re-runs only fetch items that are new or whose poster actually changed.
+Incremental: a manifest.json per library records each item's poster and art paths, so
+re-runs only fetch items that are new or whose selected images actually changed.
 """
 import json
 
 from tqdm import tqdm
 
-from config import LIBRARY_NAMES, POSTERS_DIR
-from plex_client import get_sections, get_section_items, download_thumb, safe_filename
+from config import LIBRARY_NAMES, POSTERS_DIR, ARTWORK_DIR
+from plex_client import get_sections, get_section_items, download_image, safe_filename
 import preflight
 
 
@@ -31,7 +31,7 @@ def main():
     if missing:
         print(f"Warning: these libraries were not found on the server: {', '.join(missing)}")
 
-    total_new, total_updated, total_skipped = 0, 0, 0
+    counts = {"new": 0, "updated": 0, "skipped": 0, "missing": 0}
 
     for name in LIBRARY_NAMES:
         section = sections.get(name)
@@ -39,37 +39,43 @@ def main():
             continue
 
         out_dir = POSTERS_DIR / name
+        art_dir = ARTWORK_DIR / name
         manifest_path = out_dir / "manifest.json"
         manifest = load_manifest(manifest_path)
 
         items = get_section_items(section["key"])
 
-        for item in tqdm(items, desc=name, unit="poster"):
-            thumb = item.get("thumb")
-            if not thumb:
-                continue
-
+        for item in tqdm(items, desc=name, unit="item"):
             rating_key = str(item["ratingKey"])
             filename = safe_filename(item["title"], rating_key)
-            dest = out_dir / filename
+            previous = manifest.get(rating_key, {})
+            # Migrate manifests created by the poster-only version.
+            if isinstance(previous, str):
+                previous = {"thumb": previous}
 
-            previous = manifest.get(rating_key)
-            if previous == thumb and dest.exists():
-                total_skipped += 1
-                continue
+            current = {"thumb": item.get("thumb"), "art": item.get("art")}
+            for kind, dest_dir in (("thumb", out_dir), ("art", art_dir)):
+                plex_path = current[kind]
+                if not plex_path:
+                    counts["missing"] += 1
+                    continue
+                dest = dest_dir / filename
+                if previous.get(kind) == plex_path and dest.exists():
+                    counts["skipped"] += 1
+                    continue
+                download_image(plex_path, dest)
+                status = "new" if not previous.get(kind) else "updated"
+                counts[status] += 1
+                tqdm.write(f"  {status} {kind}: {filename}")
 
-            download_thumb(thumb, dest)
-            manifest[rating_key] = thumb
-            if previous is None:
-                total_new += 1
-                tqdm.write(f"  new: {filename}")
-            else:
-                total_updated += 1
-                tqdm.write(f"  updated: {filename}")
+            manifest[rating_key] = current
 
         save_manifest(manifest_path, manifest)
 
-    print(f"Done. {total_new} new, {total_updated} updated, {total_skipped} unchanged (skipped).")
+    print(
+        f"Done. {counts['new']} new, {counts['updated']} updated, "
+        f"{counts['skipped']} unchanged, {counts['missing']} unavailable images."
+    )
 
 
 if __name__ == "__main__":

@@ -1,9 +1,10 @@
-"""Stage 2: batch face-swap every downloaded poster onto SOURCE_FACE.
+"""Stage 2: swap evenly assigned source faces into posters and artwork.
 
 Uses insightface directly (the same buffalo_l detector + inswapper_128.onnx
 model that both Roop and ReActor wrap) so the whole step is one headless
 script with no GUI or node graph involved.
 """
+import json
 import sys
 
 import cv2
@@ -11,12 +12,16 @@ import insightface
 from insightface.app import FaceAnalysis
 from tqdm import tqdm
 
-from config import POSTERS_DIR, SWAPPED_DIR, SOURCE_FACE, CTX_ID
+from config import (
+    POSTERS_DIR, SWAPPED_DIR, ARTWORK_DIR, ARTWORK_SWAPPED_DIR,
+    SOURCE_FACES, CTX_ID,
+)
 import preflight
 import gpu_runtime
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 MANIFEST_NAME = "manifest.json"  # written by download_posters.py; not an image, skip it
+PROCESSING_VERSION = 2  # v2 assigns a different source face to each detected person
 
 GPU_REQUESTED = CTX_ID >= 0
 
@@ -48,17 +53,33 @@ def build_models():
     return face_app, swapper
 
 
-def get_source_face(face_app):
-    img = cv2.imread(str(SOURCE_FACE))
+def get_source_face(face_app, source_path):
+    img = cv2.imread(str(source_path))
     if img is None:
-        sys.exit(f"Could not read source face image: {SOURCE_FACE}")
+        sys.exit(f"Could not read source face image: {source_path}")
     faces = face_app.get(img)
     if not faces:
-        sys.exit(f"No face detected in source image: {SOURCE_FACE}")
+        sys.exit(f"No face detected in source image: {source_path}")
     return faces[0]
 
 
-def swap_one(face_app, swapper, source_face, src, dest):
+def rating_key(path):
+    stem = path.stem
+    return stem.rsplit("[", 1)[1][:-1] if stem.endswith("]") and "[" in stem else None
+
+
+def build_assignments(files, face_count):
+    """Assign each Plex item to one face, with group sizes differing by at most one."""
+    keys = sorted({key for path in files if (key := rating_key(path))}, key=lambda x: (len(x), x))
+    return {key: index % face_count for index, key in enumerate(keys)}
+
+
+def source_indexes(start_index, detected_count, source_count):
+    """Return distinct source indexes in rotation, cycling only when necessary."""
+    return [(start_index + offset) % source_count for offset in range(detected_count)]
+
+
+def swap_one(face_app, swapper, source_faces, start_index, src, dest):
     img = cv2.imread(str(src))
     if img is None:
         return "unreadable"
@@ -67,9 +88,14 @@ def swap_one(face_app, swapper, source_face, src, dest):
     if not faces:
         return "no_face"
 
+    # Use a stable visual order so a multi-person image receives selected faces
+    # from left to right. If there are more people than source photos, cycle.
+    faces = sorted(faces, key=lambda face: (float(face.bbox[0]), float(face.bbox[1])))
     result = img.copy()
-    for face in faces:
-        result = swapper.get(result, face, source_face, paste_back=True)
+    for face, source_index in zip(
+        faces, source_indexes(start_index, len(faces), len(source_faces))
+    ):
+        result = swapper.get(result, face, source_faces[source_index], paste_back=True)
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(dest), result)
@@ -83,29 +109,69 @@ def main():
         sys.exit(f"Posters folder not found: {POSTERS_DIR}. Run the download stage first.")
 
     face_app, swapper = build_models()
-    source_face = get_source_face(face_app)
+    source_faces = [get_source_face(face_app, path) for path in SOURCE_FACES]
 
-    poster_files = [
-        p for p in POSTERS_DIR.rglob("*")
-        if p.suffix.lower() in IMAGE_EXTS and p.name != MANIFEST_NAME
+    image_sets = (
+        ("poster", POSTERS_DIR, SWAPPED_DIR),
+        ("artwork", ARTWORK_DIR, ARTWORK_SWAPPED_DIR),
+    )
+    all_files = [
+        p for _, source_dir, _ in image_sets if source_dir.exists()
+        for p in source_dir.rglob("*") if p.suffix.lower() in IMAGE_EXTS
     ]
+    assignments = build_assignments(all_files, len(source_faces))
+    assignment_path = SWAPPED_DIR / "face_assignments.json"
+    old_assignments = {}
+    face_signatures = [f"{path.resolve()}|{path.stat().st_mtime_ns}|{path.stat().st_size}" for path in SOURCE_FACES]
+    if assignment_path.exists():
+        try:
+            old_data = json.loads(assignment_path.read_text(encoding="utf-8"))
+            if (
+                old_data.get("processing_version") == PROCESSING_VERSION
+                and old_data.get("face_signatures") == face_signatures
+            ):
+                old_assignments = old_data.get("assignments", {})
+        except (json.JSONDecodeError, OSError):
+            pass
 
     counts = {"swapped": 0, "skipped": 0, "no_face": 0, "unreadable": 0}
-    for src in tqdm(poster_files, desc="Swapping", unit="poster"):
-        rel = src.relative_to(POSTERS_DIR)
-        dest = SWAPPED_DIR / rel
-
-        if dest.exists():
-            counts["skipped"] += 1
+    for kind, source_dir, output_dir in image_sets:
+        if not source_dir.exists():
             continue
+        files = [p for p in source_dir.rglob("*") if p.suffix.lower() in IMAGE_EXTS]
+        for src in tqdm(files, desc=f"Swapping {kind}", unit="image"):
+            rel = src.relative_to(source_dir)
+            dest = output_dir / rel
+            key = rating_key(src)
+            if key is None:
+                tqdm.write(f"  skipped (no ratingKey): {rel}")
+                continue
+            face_index = assignments[key]
 
-        result = swap_one(face_app, swapper, source_face, src, dest)
-        counts[result] = counts.get(result, 0) + 1
-        if result != "swapped":
-            tqdm.write(f"  {result}: {rel}")
+            if (
+                dest.exists()
+                and old_assignments.get(key) == face_index
+                and dest.stat().st_mtime_ns >= src.stat().st_mtime_ns
+            ):
+                counts["skipped"] += 1
+                continue
+
+            result = swap_one(face_app, swapper, source_faces, face_index, src, dest)
+            counts[result] = counts.get(result, 0) + 1
+            if result != "swapped":
+                tqdm.write(f"  {result}: {kind}/{rel}")
+
+    assignment_path.parent.mkdir(parents=True, exist_ok=True)
+    assignment_path.write_text(json.dumps({
+        "processing_version": PROCESSING_VERSION,
+        "faces": [str(path) for path in SOURCE_FACES],
+        "face_signatures": face_signatures,
+        "assignments": assignments,
+    }, indent=2), encoding="utf-8")
 
     print(
-        f"Done. Swapped {counts['swapped']}, skipped {counts['skipped']} (already done), "
+        f"Done with {len(source_faces)} selected face(s). Swapped {counts['swapped']}, "
+        f"skipped {counts['skipped']} (already done), "
         f"{counts['no_face']} had no detectable face, {counts['unreadable']} unreadable."
     )
 

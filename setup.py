@@ -96,27 +96,33 @@ def choose_libraries(sections):
     return chosen
 
 
-def choose_face_photo():
-    print("Needs to be front-facing, well-lit, at least 512x512, nothing covering your face.")
+def choose_face_photos():
+    print("Each photo should be front-facing, well-lit, and at least 512x512.")
+    print("Enter one or more paths separated by | (the pipe character).")
     default_path = REPO_ROOT / "my_face.jpg"
 
     while True:
-        face_path = Path(ask("Path to your face photo", str(default_path)))
-        if face_path.exists():
-            return face_path
-        print(f"Can't find that file: {face_path}")
-        print("Place your photo there (or type a different path) then press Enter to check again.")
-        input("Press Enter to continue...")
+        values = ask("Paths to the face photos", str(default_path)).split("|")
+        face_paths = [Path(value.strip()) for value in values if value.strip()]
+        missing = [path for path in face_paths if not path.exists()]
+        if face_paths and not missing:
+            print(f"Using {len(face_paths)} face photo(s).")
+            return face_paths
+        for path in missing:
+            print(f"Can't find that file: {path}")
+        print("Correct the paths, then try again.")
 
 
-def write_env(plex_url, plex_token, libraries, face_path, ctx_id):
+def write_env(plex_url, plex_token, libraries, face_paths, ctx_id):
     lines = [
         f"PLEX_URL={plex_url}",
         f"PLEX_TOKEN={plex_token}",
         f"LIBRARY_NAMES={','.join(libraries)}",
-        f"SOURCE_FACE={face_path}",
+        f"SOURCE_FACES={'|'.join(str(path) for path in face_paths)}",
         "POSTERS_DIR=posters_original",
         "SWAPPED_DIR=posters_swapped",
+        "ARTWORK_DIR=artwork_original",
+        "ARTWORK_SWAPPED_DIR=artwork_swapped",
         f"CTX_ID={ctx_id}",
         "",
     ]
@@ -220,15 +226,15 @@ def main():
     step(2, "Choose libraries")
     libraries = choose_libraries(sections)
 
-    step(3, "Your source face photo")
-    face_path = choose_face_photo()
+    step(3, "Your source face photos")
+    face_paths = choose_face_photos()
 
     step(4, "Hardware")
     has_gpu = ask_yes_no("Do you have an NVIDIA GPU you want to use (much faster)?", default=False)
     ctx_id = 0 if has_gpu else -1
 
     step(5, "Saving configuration")
-    write_env(plex_url, plex_token, libraries, face_path, ctx_id)
+    write_env(plex_url, plex_token, libraries, face_paths, ctx_id)
     print(f"Wrote {ENV_PATH}")
 
     step(6, "Installing the right packages for your hardware")
