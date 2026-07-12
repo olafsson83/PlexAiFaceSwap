@@ -125,6 +125,19 @@ files between stages.
   wizard installed `onnxruntime-gpu` without its actual CUDA/cuDNN runtime libraries,
   which made it silently fall back to CPU (still worked, just much slower). The current
   version installs those libraries and loads them correctly; re-running picks up the fix.
+- **GPU setup pins ONNX Runtime 1.26 and cuDNN 9.10** instead of letting pip pick an
+  arbitrary cuDNN 9.x release — a later cuDNN 9.24 was found to fail with
+  `CUDNN_BACKEND_API_FAILED` on the reference RTX 4060 Laptop the first time a real
+  convolution ran (session construction succeeded, only actual inference failed). cuDNN
+  9.10 doesn't ship the buggy engine plugin at all. `gpu_runtime.py` also registers the
+  NVIDIA DLL directories for the life of the process and runs a real CUDA convolution
+  during setup (`[OK] CUDA/cuDNN convolution test passed on GPU`) rather than just
+  checking that `CUDAExecutionProvider` is listed as available. When GPU mode is
+  selected, runtime CPU fallback is disabled deliberately: a CUDA failure stops with an
+  error instead of quietly running everything on CPU. If this project was installed
+  before this pin was added, close all windows, delete `.venv`, pull the latest code,
+  and run `setup.bat` again — system-wide CUDA Toolkit installations don't need to be
+  removed, the project's isolated runtime takes priority.
 - **Want the original poster back for something?** The upload stage locks each poster it
   sets (`thumb.locked=1`) so Plex won't silently revert it. To undo that for an item: in
   Plex, open its poster picker and choose a different poster (including one of the

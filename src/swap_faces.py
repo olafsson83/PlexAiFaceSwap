@@ -8,15 +8,17 @@ import sys
 
 import cv2
 import insightface
-import onnxruntime
 from insightface.app import FaceAnalysis
 from tqdm import tqdm
 
 from config import POSTERS_DIR, SWAPPED_DIR, SOURCE_FACE, CTX_ID
 import preflight
+import gpu_runtime
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 MANIFEST_NAME = "manifest.json"  # written by download_posters.py; not an image, skip it
+
+GPU_REQUESTED = CTX_ID >= 0
 
 
 def build_models():
@@ -26,15 +28,23 @@ def build_models():
     # search path -- without this, onnxruntime silently falls back to CPU
     # even though CUDAExecutionProvider is "available". Safe to call
     # unconditionally: it's a no-op on the CPU-only onnxruntime package.
-    onnxruntime.preload_dlls()
-    face_app = FaceAnalysis(name="buffalo_l")
+    gpu_runtime.configure_cuda_runtime(GPU_REQUESTED)
+    providers = gpu_runtime.requested_providers(GPU_REQUESTED)
+    face_app = FaceAnalysis(name="buffalo_l", providers=providers)
     face_app.prepare(ctx_id=CTX_ID, det_size=(640, 640))
+    for task_name, model in face_app.models.items():
+        session = getattr(model, "session", None)
+        if session is not None:
+            gpu_runtime.enforce_session_provider(session, GPU_REQUESTED, f"InsightFace {task_name} model")
     # get_model() only joins a name with the model root if it does NOT end in
     # ".onnx" -- pass a name ending in .onnx and it's used as a literal path
     # instead (relative to the current working directory), which silently
     # fails unless you happen to run from inside ~/.insightface/models/.
     # Passing the fully resolved path sidesteps that entirely.
-    swapper = insightface.model_zoo.get_model(str(preflight.MODEL_PATH), download=False, download_zip=False)
+    swapper = insightface.model_zoo.get_model(
+        str(preflight.MODEL_PATH), download=False, download_zip=False, providers=providers
+    )
+    gpu_runtime.enforce_session_provider(swapper.session, GPU_REQUESTED, "INSwapper model")
     return face_app, swapper
 
 
