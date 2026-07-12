@@ -5,7 +5,7 @@ from pathlib import Path
 
 import requests
 
-from config import PLEX_URL, PLEX_TOKEN, SOURCE_FACE, REPO_ROOT
+from config import PLEX_URL, PLEX_TOKEN, SOURCE_FACES, REPO_ROOT
 
 MODEL_PATH = Path.home() / ".insightface" / "models" / "inswapper_128.onnx"
 
@@ -26,7 +26,8 @@ def diagnose():
         ((REPO_ROOT / ".env").exists(), ".env file exists"),
         (bool(PLEX_TOKEN), "PLEX_TOKEN is set"),
         (_plex_reachable(), f"Plex reachable at {PLEX_URL}"),
-        (SOURCE_FACE.exists(), f"Source face image found ({SOURCE_FACE.name})"),
+        (bool(SOURCE_FACES) and all(p.exists() for p in SOURCE_FACES),
+         f"Source face images found ({len(SOURCE_FACES)} configured)"),
         (MODEL_PATH.exists(), "Face-swap model downloaded"),
     ]
 
@@ -49,8 +50,12 @@ def require_ready(need_plex=False, need_face=False, need_model=False):
     elif need_plex and not _plex_reachable():
         problems.append(f"Could not reach Plex at {PLEX_URL} - is the server running and the token correct?")
 
-    if need_face and not SOURCE_FACE.exists():
-        problems.append(f"Source face image not found: {SOURCE_FACE}")
+    if need_face:
+        if not SOURCE_FACES:
+            problems.append("No source face images are configured.")
+        for face in SOURCE_FACES:
+            if not face.exists():
+                problems.append(f"Source face image not found: {face}")
 
     if need_model and not MODEL_PATH.exists():
         problems.append(f"Face-swap model not found: {MODEL_PATH}")

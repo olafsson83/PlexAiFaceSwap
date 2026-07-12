@@ -1,4 +1,4 @@
-"""Stage 3 (optional): upload swapped posters back into Plex as each item's poster.
+"""Stage 3: upload swapped posters and paired background artwork to Plex.
 
 Matches files back to Plex items using the ratingKey embedded in the filename
 by download_posters.py, so this only works on files that came from stage 1.
@@ -10,8 +10,11 @@ import sys
 import requests
 from tqdm import tqdm
 
-from config import SWAPPED_DIR
-from plex_client import get_sections, upload_poster, lock_poster, rating_key_from_filename
+from config import SWAPPED_DIR, ARTWORK_SWAPPED_DIR
+from plex_client import (
+    get_sections, upload_poster, upload_artwork, lock_poster, lock_artwork,
+    rating_key_from_filename,
+)
 import preflight
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png"}
@@ -25,10 +28,18 @@ def main():
         sys.exit(f"Swapped posters folder not found: {SWAPPED_DIR}. Run the swap stage first.")
 
     sections = {s["title"]: s for s in get_sections()}
-    files = [p for p in SWAPPED_DIR.rglob("*") if p.suffix.lower() in IMAGE_EXTS]
+    image_sets = (
+        ("poster", SWAPPED_DIR, upload_poster, lock_poster),
+        ("artwork", ARTWORK_SWAPPED_DIR, upload_artwork, lock_artwork),
+    )
 
     uploaded, locked, failed = 0, 0, 0
-    for f in tqdm(files, desc="Uploading", unit="poster"):
+    files = [
+        (kind, root, upload, lock, path)
+        for kind, root, upload, lock in image_sets if root.exists()
+        for path in root.rglob("*") if path.suffix.lower() in IMAGE_EXTS
+    ]
+    for kind, root, upload, lock, f in tqdm(files, desc="Uploading", unit="image"):
         rating_key = rating_key_from_filename(f)
         if not rating_key:
             tqdm.write(f"  skipped (no ratingKey in filename): {f.name}")
@@ -36,14 +47,14 @@ def main():
             continue
 
         try:
-            upload_poster(rating_key, f)
+            upload(rating_key, f)
             uploaded += 1
         except requests.HTTPError as e:
             tqdm.write(f"  upload failed: {f.name} ({e})")
             failed += 1
             continue
 
-        library_name = f.relative_to(SWAPPED_DIR).parts[0]
+        library_name = f.relative_to(root).parts[0]
         section = sections.get(library_name)
         item_type = PLEX_TYPE_CODES.get(section.get("type")) if section else None
         if not section or not item_type:
@@ -51,12 +62,12 @@ def main():
             continue
 
         try:
-            lock_poster(rating_key, section["key"], item_type)
+            lock(rating_key, section["key"], item_type)
             locked += 1
         except requests.HTTPError as e:
             tqdm.write(f"  uploaded but lock failed: {f.name} ({e})")
 
-    print(f"Done. Uploaded {uploaded} ({locked} locked against future refreshes), failed {failed}.")
+    print(f"Done. Uploaded {uploaded} poster/artwork images ({locked} locked), failed {failed}.")
 
 
 if __name__ == "__main__":

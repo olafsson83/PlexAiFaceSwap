@@ -31,9 +31,9 @@ def full_pipeline(upload=False):
 
 def menu():
     actions = {
-        "1": ("Download posters from Plex", lambda: run_stage("download_posters.py")),
-        "2": ("Swap faces (batch)", lambda: run_stage("swap_faces.py")),
-        "3": ("Upload swapped posters back to Plex", lambda: run_stage("upload_posters.py")),
+        "1": ("Download posters + artwork from Plex", lambda: run_stage("download_posters.py")),
+        "2": ("Swap faces in posters + artwork", lambda: run_stage("swap_faces.py")),
+        "3": ("Upload swapped posters + artwork to Plex", lambda: run_stage("upload_posters.py")),
         "4": ("Run full pipeline (download + swap)", lambda: full_pipeline(upload=False)),
         "5": ("Run full pipeline + upload to Plex", lambda: full_pipeline(upload=True)),
     }

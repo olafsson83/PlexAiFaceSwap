@@ -1,14 +1,15 @@
 # PlexAiFaceSwap
 
-Swap faces in movie/TV posters. Three stages, run in order:
+Swap faces in movie/TV posters and background artwork. Three stages, run in order:
 
-1. **Download** — pulls current posters for your chosen Plex libraries down to local
-   files. Incremental: re-runs only fetch items that are new or whose poster changed.
-2. **Swap** — batch-swaps your face onto every downloaded poster, using
+1. **Download** — pulls current posters and artwork for your chosen Plex libraries down to local
+   files. Incremental: re-runs only fetch items that are new or whose selected images changed.
+2. **Swap** — evenly assigns your selected faces to Plex items and swaps the assigned
+   face into both each item's poster and artwork, using
    [insightface](https://github.com/deepinsight/insightface) directly (the same
    detector + model that both Roop and ReActor wrap). No GUI, no ComfyUI node graph.
-3. **Upload** *(optional)* — pushes the swapped images back into Plex as the selected
-   poster for each item, then locks the poster field so a later "Refresh Metadata" can't
+3. **Upload** *(optional)* — pushes both swapped images back into Plex as the selected
+   poster and artwork, then locks both fields so a later "Refresh Metadata" can't
    silently revert it back to the original artwork.
 
 > Personal, non-commercial use only. Keep this on your own server for your own laughs —
@@ -50,7 +51,7 @@ python run.py
   it tests the connection for you and tells you right away if something's wrong),
 - fetches your actual library list from Plex and lets you pick from a numbered menu
   instead of typing exact names,
-- checks your source face photo exists,
+- lets you select one or more source face photos and checks that they exist,
 - asks if you have an NVIDIA GPU and installs `onnxruntime-gpu` with its CUDA/cuDNN
   runtime libraries (as pip packages -- no separate CUDA Toolkit install or NVIDIA
   developer account needed), otherwise the plain CPU `onnxruntime`,
@@ -60,14 +61,14 @@ python run.py
 - writes all of that to `.env`,
 - and finishes with a checklist confirming everything is ready.
 
-It's safe to re-run any time you want to change libraries, swap your source photo, etc.
+It's safe to re-run any time you want to change libraries or your selected face photos.
 
 `run.py` (or `run.bat`) then gives you a menu:
 
 ```
-1) Download posters from Plex
-2) Swap faces (batch)
-3) Upload swapped posters back to Plex
+1) Download posters + artwork from Plex
+2) Swap faces in posters + artwork
+3) Upload swapped posters + artwork to Plex
 4) Run full pipeline (download + swap)
 5) Run full pipeline + upload to Plex
 0) Exit
@@ -87,16 +88,24 @@ Every stage also runs its own readiness check first and tells you exactly what's
 ("PLEX_TOKEN is not set", "face-swap model not found", etc.) with a pointer back to
 `python setup.py`, instead of failing with a raw stack trace.
 
-## Your source face photo
+## Your source face photos
 
 Front-facing, evenly lit, at least 512×512, nothing covering your face (no sunglasses,
-shadows, hands). A phone selfie in good daylight works fine. `setup.py` will ask where
-it is and re-prompt if it can't find the file.
+shadows, hands). Phone selfies in good daylight work well. `setup.py` accepts one or
+more image paths separated by `|` and re-prompts if it can't find any selected file.
 
 ## Where things land
 
-- `posters_original/<library>/` — downloaded originals
-- `posters_swapped/<library>/` — swapped copies
+- `posters_original/<library>/` and `artwork_original/<library>/` — downloaded originals
+- `posters_swapped/<library>/` and `artwork_swapped/<library>/` — swapped copies
+
+Face assignment is per Plex item, not per image. Assignments are round-robin over a
+stable item order, so 100 movies with 5 selected faces gives each face 20 movies. The
+face assigned to a movie is the starting face for both its poster and artwork. When an
+image contains multiple detected people, they receive different selected faces from
+left to right. The selection cycles only if there are more detected people than source
+photos. Poster and artwork are processed independently, so additional selected faces
+can still appear in the artwork even when they were not present in the poster.
 
 Filenames encode each item's Plex `ratingKey` (e.g. `The Matrix [12345].jpg`) — the
 upload stage uses that to know which Plex item each file belongs to, so don't rename
