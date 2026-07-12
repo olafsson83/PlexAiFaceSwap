@@ -101,7 +101,11 @@ more image paths separated by `|` and re-prompts if it can't find any selected f
 
 Face assignment is per Plex item, not per image. Assignments are round-robin over a
 stable item order, so 100 movies with 5 selected faces gives each face 20 movies. The
-face assigned to a movie's poster is always also assigned to that movie's artwork.
+face assigned to a movie is the starting face for both its poster and artwork. When an
+image contains multiple detected people, they receive different selected faces from
+left to right. The selection cycles only if there are more detected people than source
+photos. Poster and artwork are processed independently, so additional selected faces
+can still appear in the artwork even when they were not present in the poster.
 
 Filenames encode each item's Plex `ratingKey` (e.g. `The Matrix [12345].jpg`) — the
 upload stage uses that to know which Plex item each file belongs to, so don't rename

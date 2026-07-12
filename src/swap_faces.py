@@ -21,6 +21,7 @@ import preflight
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 MANIFEST_NAME = "manifest.json"  # written by download_posters.py; not an image, skip it
+PROCESSING_VERSION = 2  # v2 assigns a different source face to each detected person
 
 
 def build_models():
@@ -63,7 +64,12 @@ def build_assignments(files, face_count):
     return {key: index % face_count for index, key in enumerate(keys)}
 
 
-def swap_one(face_app, swapper, source_face, src, dest):
+def source_indexes(start_index, detected_count, source_count):
+    """Return distinct source indexes in rotation, cycling only when necessary."""
+    return [(start_index + offset) % source_count for offset in range(detected_count)]
+
+
+def swap_one(face_app, swapper, source_faces, start_index, src, dest):
     img = cv2.imread(str(src))
     if img is None:
         return "unreadable"
@@ -72,9 +78,14 @@ def swap_one(face_app, swapper, source_face, src, dest):
     if not faces:
         return "no_face"
 
+    # Use a stable visual order so a multi-person image receives selected faces
+    # from left to right. If there are more people than source photos, cycle.
+    faces = sorted(faces, key=lambda face: (float(face.bbox[0]), float(face.bbox[1])))
     result = img.copy()
-    for face in faces:
-        result = swapper.get(result, face, source_face, paste_back=True)
+    for face, source_index in zip(
+        faces, source_indexes(start_index, len(faces), len(source_faces))
+    ):
+        result = swapper.get(result, face, source_faces[source_index], paste_back=True)
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(dest), result)
@@ -105,7 +116,10 @@ def main():
     if assignment_path.exists():
         try:
             old_data = json.loads(assignment_path.read_text(encoding="utf-8"))
-            if old_data.get("face_signatures") == face_signatures:
+            if (
+                old_data.get("processing_version") == PROCESSING_VERSION
+                and old_data.get("face_signatures") == face_signatures
+            ):
                 old_assignments = old_data.get("assignments", {})
         except (json.JSONDecodeError, OSError):
             pass
@@ -132,13 +146,14 @@ def main():
                 counts["skipped"] += 1
                 continue
 
-            result = swap_one(face_app, swapper, source_faces[face_index], src, dest)
+            result = swap_one(face_app, swapper, source_faces, face_index, src, dest)
             counts[result] = counts.get(result, 0) + 1
             if result != "swapped":
                 tqdm.write(f"  {result}: {kind}/{rel}")
 
     assignment_path.parent.mkdir(parents=True, exist_ok=True)
     assignment_path.write_text(json.dumps({
+        "processing_version": PROCESSING_VERSION,
         "faces": [str(path) for path in SOURCE_FACES],
         "face_signatures": face_signatures,
         "assignments": assignments,
