@@ -5,7 +5,7 @@ from pathlib import Path
 
 import requests
 
-from config import PLEX_URL, PLEX_TOKEN, SOURCE_FACES, REPO_ROOT
+from config import PLEX_URL, PLEX_TOKEN, SOURCE_FACES, REPO_ROOT, CTX_ID
 
 MODEL_PATH = Path.home() / ".insightface" / "models" / "inswapper_128.onnx"
 
@@ -22,7 +22,7 @@ def _plex_reachable():
 
 def diagnose():
     """Full readiness checklist, used by setup.py to show a status report."""
-    return [
+    checks = [
         ((REPO_ROOT / ".env").exists(), ".env file exists"),
         (bool(PLEX_TOKEN), "PLEX_TOKEN is set"),
         (_plex_reachable(), f"Plex reachable at {PLEX_URL}"),
@@ -30,6 +30,14 @@ def diagnose():
          f"Source face images found ({len(SOURCE_FACES)} configured)"),
         (MODEL_PATH.exists(), "Face-swap model downloaded"),
     ]
+    if CTX_ID >= 0:
+        try:
+            import gpu_runtime
+            gpu_runtime.run_cuda_self_test()
+            checks.append((True, "CUDA/cuDNN convolution test passed on GPU"))
+        except Exception as exc:
+            checks.append((False, f"CUDA/cuDNN convolution test failed: {exc}"))
+    return checks
 
 
 def print_report(checks=None):
